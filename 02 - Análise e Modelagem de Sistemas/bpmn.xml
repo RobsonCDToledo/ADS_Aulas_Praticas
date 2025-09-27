@@ -1,0 +1,338 @@
+# Create a BPMN 2.0 XML file for the SIC → OC purchasing process
+bpmn_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:collaboration id="Collab_SIC_OC">
+    <bpmn:participant id="Participant_Org" name="Organização" processRef="Process_Org"/>
+    <bpmn:participant id="Participant_Forn" name="Fornecedor" processRef="Process_Forn"/>
+    <!-- Message Flows -->
+    <bpmn:messageFlow id="MF_OC_to_Forn" sourceRef="Task_EmitirOC" targetRef="Task_ReceberOC" name="OC"/>
+    <bpmn:messageFlow id="MF_Entrega_to_Recepcao" sourceRef="Task_EnviarMercFatura" targetRef="Task_ReceberMercFatura" name="Mercadoria+Fatura"/>
+    <bpmn:messageFlow id="MF_Recusa_to_Forn" sourceRef="Task_RecusarEntrega" targetRef="Task_RecolherMaterial" name="Solicitar recolhimento"/>
+  </bpmn:collaboration>
+
+  <!-- Processo da Organização com lanes -->
+  <bpmn:process id="Process_Org" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_Org">
+      <bpmn:lane id="Lane_Solicitante" name="Solicitante">
+        <bpmn:flowNodeRef>StartEvent</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AbrirSIC</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Compras" name="Compras">
+        <bpmn:flowNodeRef>Task_RealizarCotacoes</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_CotacoesOk</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SelecionarMelhorProposta</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_EmitirOC</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Recepcao" name="Recepção">
+        <bpmn:flowNodeRef>Task_ReceberMercFatura</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ConferirMercFatura</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_ConferenciaOK</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_EncaminharMaterialSolicitante</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_EncaminharFaturaFinanceiro</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_RecusarEntrega</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Financeiro" name="Financeiro">
+        <bpmn:flowNodeRef>Task_ProgramarPagamento</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Pago</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <!-- Flow -->
+    <bpmn:startEvent id="StartEvent" name="Necessidade de material">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="Task_AbrirSIC" name="Abrir SIC (Solicitação Interna de Compra)">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent" targetRef="Task_AbrirSIC"/>
+
+    <bpmn:task id="Task_RealizarCotacoes" name="Realizar cotações (≥ 3)">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopCardinality>3</bpmn:loopCardinality>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:task>
+
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_AbrirSIC" targetRef="Task_RealizarCotacoes"/>
+
+    <bpmn:exclusiveGateway id="Gateway_CotacoesOk" name="Cotações suficientes?">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+      <bpmn:outgoing>Flow_3Retry</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_RealizarCotacoes" targetRef="Gateway_CotacoesOk"/>
+    <bpmn:sequenceFlow id="Flow_3Retry" sourceRef="Gateway_CotacoesOk" targetRef="Task_RealizarCotacoes">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"><![CDATA[${false}]]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:task id="Task_SelecionarMelhorProposta" name="Selecionar melhor proposta (preço e prazo)">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Gateway_CotacoesOk" targetRef="Task_SelecionarMelhorProposta">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"><![CDATA[${true}]]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sendTask id="Task_EmitirOC" name="Emitir e enviar OC ao fornecedor">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_6</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_SelecionarMelhorProposta" targetRef="Task_EmitirOC"/>
+
+    <bpmn:task id="Task_ReceberMercFatura" name="Receber mercadoria e fatura">
+      <bpmn:incoming>Flow_6</bpmn:incoming>
+      <bpmn:outgoing>Flow_7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_6" sourceRef="Task_EmitirOC" targetRef="Task_ReceberMercFatura"/>
+
+    <bpmn:task id="Task_ConferirMercFatura" name="Conferir mercadoria × fatura">
+      <bpmn:incoming>Flow_7</bpmn:incoming>
+      <bpmn:outgoing>Flow_8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_7" sourceRef="Task_ReceberMercFatura" targetRef="Task_ConferirMercFatura"/>
+
+    <bpmn:exclusiveGateway id="Gateway_ConferenciaOK" name="Conferência OK?">
+      <bpmn:incoming>Flow_8</bpmn:incoming>
+      <bpmn:outgoing>Flow_OK_1</bpmn:outgoing>
+      <bpmn:outgoing>Flow_NOK_1</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="Flow_8" sourceRef="Task_ConferirMercFatura" targetRef="Gateway_ConferenciaOK"/>
+
+    <!-- Ramo OK -->
+    <bpmn:task id="Task_EncaminharMaterialSolicitante" name="Encaminhar material ao solicitante">
+      <bpmn:incoming>Flow_OK_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_OK_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_OK_1" sourceRef="Gateway_ConferenciaOK" targetRef="Task_EncaminharMaterialSolicitante">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"><![CDATA[${aprovado}]]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:task id="Task_EncaminharFaturaFinanceiro" name="Encaminhar fatura ao Financeiro">
+      <bpmn:incoming>Flow_OK_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_OK_3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_OK_2" sourceRef="Task_EncaminharMaterialSolicitante" targetRef="Task_EncaminharFaturaFinanceiro"/>
+
+    <bpmn:task id="Task_ProgramarPagamento" name="Programar pagamento ao fornecedor">
+      <bpmn:incoming>Flow_OK_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_EndPago</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_OK_3" sourceRef="Task_EncaminharFaturaFinanceiro" targetRef="Task_ProgramarPagamento"/>
+    <bpmn:endEvent id="EndEvent_Pago" name="Pagamento programado">
+      <bpmn:incoming>Flow_EndPago</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_EndPago" sourceRef="Task_ProgramarPagamento" targetRef="EndEvent_Pago"/>
+
+    <!-- Ramo NOK -->
+    <bpmn:sendTask id="Task_RecusarEntrega" name="Recusar entrega e solicitar recolhimento">
+      <bpmn:incoming>Flow_NOK_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_NOK_End</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:sequenceFlow id="Flow_NOK_1" sourceRef="Gateway_ConferenciaOK" targetRef="Task_RecusarEntrega">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"><![CDATA[${reprovado}]]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:endEvent id="EndEvent_NOK" name="Entrega recusada">
+      <bpmn:incoming>Flow_NOK_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_NOK_End" sourceRef="Task_RecusarEntrega" targetRef="EndEvent_NOK"/>
+
+    <!-- Artefatos (dados) -->
+    <bpmn:dataObjectReference id="Data_SIC" dataObjectRef="DO_SIC" name="SIC"/>
+    <bpmn:dataObject id="DO_SIC" name="SIC"/>
+    <bpmn:dataObjectReference id="Data_OC" dataObjectRef="DO_OC" name="OC"/>
+    <bpmn:dataObject id="DO_OC" name="OC"/>
+    <bpmn:dataObjectReference id="Data_Fatura" dataObjectRef="DO_Fatura" name="Fatura"/>
+    <bpmn:dataObject id="DO_Fatura" name="Fatura"/>
+  </bpmn:process>
+
+  <!-- Processo do Fornecedor (alto nível) -->
+  <bpmn:process id="Process_Forn" isExecutable="false">
+    <bpmn:task id="Task_ReceberOC" name="Receber OC"/>
+    <bpmn:task id="Task_EnviarMercFatura" name="Enviar mercadoria e fatura"/>
+    <bpmn:task id="Task_RecolherMaterial" name="Recolher material (em caso de recusa)"/>
+  </bpmn:process>
+
+  <!-- DI: layout simples -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collab_SIC_OC">
+      <!-- Participants -->
+      <bpmndi:BPMNShape id="DI_Part_Org" bpmnElement="Participant_Org" isHorizontal="true">
+        <dc:Bounds x="200" y="80" width="1200" height="420"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Part_Forn" bpmnElement="Participant_Forn" isHorizontal="true">
+        <dc:Bounds x="200" y="520" width="1200" height="140"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lanes for Org -->
+      <bpmndi:BPMNShape id="DI_Lane_Solicitante" bpmnElement="Lane_Solicitante" isHorizontal="true">
+        <dc:Bounds x="200" y="80" width="1200" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Lane_Compras" bpmnElement="Lane_Compras" isHorizontal="true">
+        <dc:Bounds x="200" y="160" width="1200" height="120"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Lane_Recepcao" bpmnElement="Lane_Recepcao" isHorizontal="true">
+        <dc:Bounds x="200" y="280" width="1200" height="120"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Lane_Financeiro" bpmnElement="Lane_Financeiro" isHorizontal="true">
+        <dc:Bounds x="200" y="400" width="1200" height="100"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Org nodes -->
+      <bpmndi:BPMNShape id="DI_StartEvent" bpmnElement="StartEvent">
+        <dc:Bounds x="240" y="110" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Task_AbrirSIC" bpmnElement="Task_AbrirSIC">
+        <dc:Bounds x="320" y="100" width="190" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Task_RealizarCotacoes" bpmnElement="Task_RealizarCotacoes">
+        <dc:Bounds x="560" y="200" width="190" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Gateway_CotacoesOk" bpmnElement="Gateway_CotacoesOk" isMarkerVisible="true">
+        <dc:Bounds x="780" y="205" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Task_SelecionarMelhorProposta" bpmnElement="Task_SelecionarMelhorProposta">
+        <dc:Bounds x="860" y="200" width="220" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Task_EmitirOC" bpmnElement="Task_EmitirOC">
+        <dc:Bounds x="1110" y="200" width="220" height="56"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="DI_Task_ReceberMercFatura" bpmnElement="Task_ReceberMercFatura">
+        <dc:Bounds x="320" y="310" width="220" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Task_ConferirMercFatura" bpmnElement="Task_ConferirMercFatura">
+        <dc:Bounds x="580" y="310" width="220" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Gateway_ConferenciaOK" bpmnElement="Gateway_ConferenciaOK" isMarkerVisible="true">
+        <dc:Bounds x="830" y="315" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <!-- OK branch -->
+      <bpmndi:BPMNShape id="DI_Task_EncaminharMaterialSolicitante" bpmnElement="Task_EncaminharMaterialSolicitante">
+        <dc:Bounds x="920" y="280" width="220" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Task_EncaminharFaturaFinanceiro" bpmnElement="Task_EncaminharFaturaFinanceiro">
+        <dc:Bounds x="1180" y="280" width="200" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Task_ProgramarPagamento" bpmnElement="Task_ProgramarPagamento">
+        <dc:Bounds x="1180" y="420" width="220" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_EndEvent_Pago" bpmnElement="EndEvent_Pago">
+        <dc:Bounds x="1430" y="432" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- NOK branch -->
+      <bpmndi:BPMNShape id="DI_Task_RecusarEntrega" bpmnElement="Task_RecusarEntrega">
+        <dc:Bounds x="920" y="350" width="240" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_EndEvent_NOK" bpmnElement="EndEvent_NOK">
+        <dc:Bounds x="1180" y="362" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Fornecedor nodes -->
+      <bpmndi:BPMNShape id="DI_Task_ReceberOC" bpmnElement="Task_ReceberOC">
+        <dc:Bounds x="420" y="560" width="200" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Task_EnviarMercFatura" bpmnElement="Task_EnviarMercFatura">
+        <dc:Bounds x="680" y="560" width="240" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DI_Task_RecolherMaterial" bpmnElement="Task_RecolherMaterial">
+        <dc:Bounds x="980" y="560" width="240" height="56"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Flows (straight connectors without waypoints for simplicity) -->
+      <bpmndi:BPMNEdge id="DI_Flow_1" bpmnElement="Flow_1">
+        <di:waypoint x="276" y="128"/>
+        <di:waypoint x="320" y="128"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_2" bpmnElement="Flow_2">
+        <di:waypoint x="510" y="128"/>
+        <di:waypoint x="560" y="228"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_3" bpmnElement="Flow_3">
+        <di:waypoint x="750" y="228"/>
+        <di:waypoint x="780" y="230"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_3Retry" bpmnElement="Flow_3Retry">
+        <di:waypoint x="805" y="255"/>
+        <di:waypoint x="655" y="256"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_4" bpmnElement="Flow_4">
+        <di:waypoint x="830" y="230"/>
+        <di:waypoint x="860" y="228"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_5" bpmnElement="Flow_5">
+        <di:waypoint x="1080" y="228"/>
+        <di:waypoint x="1110" y="228"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_6" bpmnElement="Flow_6">
+        <di:waypoint x="1170" y="256"/>
+        <di:waypoint x="430" y="338"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_7" bpmnElement="Flow_7">
+        <di:waypoint x="540" y="338"/>
+        <di:waypoint x="580" y="338"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_8" bpmnElement="Flow_8">
+        <di:waypoint x="800" y="338"/>
+        <di:waypoint x="830" y="340"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_OK_1" bpmnElement="Flow_OK_1">
+        <di:waypoint x="855" y="340"/>
+        <di:waypoint x="920" y="308"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_OK_2" bpmnElement="Flow_OK_2">
+        <di:waypoint x="1140" y="308"/>
+        <di:waypoint x="1180" y="308"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_OK_3" bpmnElement="Flow_OK_3">
+        <di:waypoint x="1280" y="336"/>
+        <di:waypoint x="1290" y="420"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_EndPago" bpmnElement="Flow_EndPago">
+        <di:waypoint x="1400" y="448"/>
+        <di:waypoint x="1430" y="450"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_NOK_1" bpmnElement="Flow_NOK_1">
+        <di:waypoint x="855" y="340"/>
+        <di:waypoint x="920" y="378"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_Flow_NOK_End" bpmnElement="Flow_NOK_End">
+        <di:waypoint x="1160" y="378"/>
+        <di:waypoint x="1180" y="380"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- Message Flow Edges -->
+      <bpmndi:BPMNEdge id="DI_MF_OC_to_Forn" bpmnElement="MF_OC_to_Forn">
+        <di:waypoint x="1220" y="228"/>
+        <di:waypoint x="520" y="560"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_MF_Entrega_to_Recepcao" bpmnElement="MF_Entrega_to_Recepcao">
+        <di:waypoint x="800" y="560"/>
+        <di:waypoint x="430" y="310"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DI_MF_Recusa_to_Forn" bpmnElement="MF_Recusa_to_Forn">
+        <di:waypoint x="1040" y="378"/>
+        <di:waypoint x="1100" y="560"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+with open("/mnt/data/SIC_OC_Processo.bpmn", "w", encoding="utf-8") as f:
+    f.write(bpmn_xml)
+
+"/mnt/data/SIC_OC_Processo.bpmn"
